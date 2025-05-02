@@ -9,7 +9,16 @@ app_ui <- function(request) {
     # Leave this function for adding external resources
     golem_add_external_resources(),
     # Your application UI logic
-
+    useShinyjs(),
+    ## start-1嵌入代码开始，作用：异常跳转到预约系统首页
+    tags$head(
+      tags$script(HTML("
+        $(document).on('shiny:disconnected', function(event) {
+          window.location.href = 'http://10.2.26.152/';
+        });
+      "))
+    ),
+    ## end-1嵌入代码结束，作用：异常跳转到预约系统首页
     navbarPage(
       "iDEP 2.01",
 
