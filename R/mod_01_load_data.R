@@ -23,11 +23,11 @@ mod_01_load_data_ui <- function(id) {
               
              .dis_gray { background-color: gray; }
               "
-            )
         )
+      )
     ),
     sidebarLayout(
-
+      
       ##################################################################
       #       Load Data sidebar panel ----
       ##################################################################
@@ -38,12 +38,12 @@ mod_01_load_data_ui <- function(id) {
         selectInput(
           inputId = ns("select_org"),
           label = NULL,
-          choices = setNames(99, "Human"), # Human is selected by default
+          choices = setNames(c(99, 999), c("Human", "None")), 
           multiple = FALSE,
           selectize = TRUE,
-          selected = setNames(99, "Human")
+          selected = setNames(999, "None")
         ),
-
+        
         fluidRow(
           column(
             width = 4, 
@@ -54,13 +54,13 @@ mod_01_load_data_ui <- function(id) {
             textOutput(ns("selected_species"))
           )
         ),
-    tags$head(tags$style("#load_data-selected_species{color: blue;
+        tags$head(tags$style("#load_data-selected_species{color: blue;
                                  font-size: 12px;
                                  font-style: italic;
                                  }"
-                         )
-              ),
-
+        )
+        ),
+        
         # .GMT file input bar ----------
         fluidRow(
           column(
@@ -78,7 +78,7 @@ mod_01_load_data_ui <- function(id) {
             # Species list and genome assemblies ----------
             actionButton(
               inputId = ns("upload_gmt_button"),
-              label = strong("Custom")
+              label = "Custom"
             ),
             tippy::tippy_this(
               ns("upload_gmt_button"),
@@ -87,20 +87,21 @@ mod_01_load_data_ui <- function(id) {
             )
           )
         ),
-
+        
         br(),
         # Dropdown for data file format ----------
         strong("2. Data type"),
-
+        
         selectInput(
           inputId = ns("data_file_format"),
           label = NULL,
           choices = list(
+            "..." = 0,
             "Read counts data (recommended)" = 1,
             "Normalized Expression data" = 2,
             "Fold-changes & adjusted P-values" = 3
           ),
-          selected = 1,
+          selected = 0,
           selectize = FALSE
         ),
         tippy::tippy_this(
@@ -112,8 +113,8 @@ mod_01_load_data_ui <- function(id) {
             ",
           theme = "light-border"
         ),
-
-
+        
+        
         # Conditional panel for fold changes data file ----------
         conditionalPanel(
           condition = "input.data_file_format == 3",
@@ -128,7 +129,11 @@ mod_01_load_data_ui <- function(id) {
         # Load expression data options ----------
         # Includes load demo action button, demo data dropdown, and expression
         # file upload box
-        uiOutput(ns("load_data_ui")),
+        conditionalPanel(
+          condition = "input.data_file_format != 0 && input.select_org != 999",
+          uiOutput(ns("load_data_ui")),
+          ns = ns
+        ),
         # tags$style(
         #   HTML("
         #     #load_data-ui {
@@ -137,9 +142,13 @@ mod_01_load_data_ui <- function(id) {
         #   ")
         # ),
         br(),
-
+        
         # Experiment design file input ----------
-        uiOutput(ns("design_file_ui")),
+        conditionalPanel(
+          condition = "input.data_file_format != 0 && input.select_org != 999",
+          uiOutput(ns("design_file_ui")),
+          ns = ns
+        ),
         uiOutput(ns("example_genes_ui")),
         br(),
         checkboxInput(
@@ -280,8 +289,8 @@ mod_01_load_data_ui <- function(id) {
         #br(),
         #tableOutput(ns("species_match"))
       ),
-
-
+      
+      
       ##################################################################
       #       Load Data panel main ----
       ##################################################################
@@ -333,7 +342,10 @@ mod_01_load_data_server <- function(id, idep_data, tab) {
       shinyjs::toggle(id = "heatmap_color_select", condition = input$customize_button)
       shinyjs::toggle(id = "select_gene_id", condition = input$customize_button)
       shinyjs::toggle(id = "multiple_map", condition = input$customize_button)
-      shinyjs::toggle(id = "no_id_conversion", condition = input$customize_button)
+      shinyjs::toggle(
+        id = "no_id_conversion", 
+        condition = (input$customize_button && !grepl("STRING", input$clicked_row))
+      )
       shinyjs::toggle(id = "plot_grid_lines", condition = input$customize_button)
       shinyjs::toggle(id = "ggplot2_theme", condition = input$customize_button)
     })
@@ -485,7 +497,11 @@ mod_01_load_data_server <- function(id, idep_data, tab) {
 
     })
     shinyjs::hideElement(id = "select_org")
+    
+    selected_species_name <- reactiveVal("None")
+    
     observeEvent(input$clicked_row, {
+      
       # find species ID from ensembl_dataset
       selected <- find_species_id_by_ensembl(
         input$clicked_row, 
@@ -510,14 +526,25 @@ mod_01_load_data_server <- function(id, idep_data, tab) {
       )
     })
 
-    selected_species_name <- reactiveVal("Human")
-
     output$selected_species <- renderText({
       if(is.null(input$gmt_file)){
         selected_species_name() 
       } else {
         return("Custom")
       }
+    })
+    
+    observeEvent(input$data_file_format, {
+      
+      req(input$data_file_format != 0)
+      updateSelectInput(
+        session = session,
+        inputId = "data_file_format",
+        choices = list("Read counts data (recommended)" = 1,
+                       "Normalized Expression data" = 2,
+                       "Fold-changes & adjusted P-values" = 3),
+        selected = input$data_file_format
+        )
     })
 
     # UI elements for load demo action button, demo data drop down, and -----
@@ -528,10 +555,15 @@ mod_01_load_data_server <- function(id, idep_data, tab) {
       )
       req(input$data_file_format)
       
+      if (input$data_file_format > 0){
       # get demo data files based on specified format
       files <- idep_data$demo_file_info
       files <- files[files$type == input$data_file_format, ]
       choices <- setNames(as.list(files$ID), files$name)
+      } else {
+        files <- NULL
+        choices <- NULL
+      }
       tagList(
         strong("3. Expression matrix (CSV, text, or xlsx)"),
         fluidRow(
@@ -658,7 +690,7 @@ mod_01_load_data_server <- function(id, idep_data, tab) {
     # UI element for design file upload ----
     output$design_file_ui <- renderUI({
       req(is.null(input$go_button) || input$go_button == 0)
-
+      
       tagList(
 
         strong("4. Optional: Exp. Design (CSV or text)"),
@@ -764,12 +796,31 @@ mod_01_load_data_server <- function(id, idep_data, tab) {
       )
     })
 
-
     # Disables experiment_file input to prevent multiple uploads
     observeEvent(input$experiment_file, {
       shinyjs::disable("experiment_file")
     })
     
+    # Notification for data type and species selection
+    observe({
+      req(tab() == "Load Data")
+      req(input$select_org == 999 || input$data_file_format == 0)
+        
+        showNotification(
+          "Select a species and a data type before uploading data.",
+          duration = 30,
+          type = "error",
+          id = "select_first"
+          )
+    })
+    
+    observe({
+      req((input$select_org != 999 && input$data_file_format != 0) ||
+          (tab() != "Load Data"))
+      
+      removeNotification("select_first")
+      
+    })
 
     # Show messages when on the Network tab or button is clicked ----
     observe({

@@ -17,11 +17,6 @@ NULL
 #' @return pca data ready for plotting
 get_pc <- function(data,
                    sample_info) {
-  # subset data if more than 100 columns
-  if (ncol(data) > 100) {
-    part <- 1:100
-    data <- data[, part]
-  }
 
   pca.object <- prcomp(t(data))
 
@@ -104,19 +99,11 @@ PCA_plot <- function(data,
   }
   memo <- ""
 
-  if (ncol(data) > 100) {
-    part <- 1:100
-    data <- data[, part]
-    memo <- paste("(only showing 100 samples)")
-  }
-
   if (ncol(data) < 31) {
     x_axis_labels <- 16
   } else {
     x_axis_labels <- 12
   }
-
-
 
   # get groups
   groups <- detect_groups(sample_names = colnames(data), sample_info = sample_info)
@@ -127,6 +114,8 @@ PCA_plot <- function(data,
   levels <- length(unique(groups))
   # plot color scheme
   color_palette <- generate_colors(n = levels, palette_name = plots_color_select)
+  
+  nshapes <- (length(unique(groups)) / 8) + 1
 
   # hide legend for large or no groups levels
   if (levels <= 1 | levels > 20) {
@@ -150,6 +139,12 @@ PCA_plot <- function(data,
   if (ncol(data) >= 40) {
     point_size <- 3
   }
+  
+  pcaData$tooltip_text <- paste0(
+    "Name: ", rownames(pcaData),
+    "<br>PC",PCAx,": ", round(pcaData[[paste0("PC", PCAx)]], 2),
+    "<br>PC",PCAy,": ", round(pcaData[[paste0("PC", PCAy)]], 2)
+  )
 
   plot_PCA <- ggplot2::ggplot(
     data = pcaData,
@@ -159,14 +154,13 @@ PCA_plot <- function(data,
       color = selected_color,
       shape = selected_shape,
       group = selected_shape,
-      text = "rownames(pcaData)" # Add this line to specify the tooltip content
+      text = "tooltip_text" # Add this line to specify the tooltip content
     )
   ) +
     # Preferred shapes
     ggplot2::scale_shape_manual(
       values = c(
-        15, 16, 17, 18, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14,
-        0, 1, 2, 5, 6, 19, 20, 30:100
+        rep(c(15, 16, 18, 0, 1, 3:5), nshapes)
       )
     ) +
     ggplot2::geom_point(size = point_size) +
@@ -260,12 +254,6 @@ PCA_plot_3d <- function(data,
   counts <- data
   memo <- ""
 
-  if (ncol(counts) > 100) {
-    part <- 1:100
-    counts <- counts[, part]
-    memo <- paste("(only showing 100 samples)")
-  }
-
   if (ncol(counts) < 31) {
     x_axis_labels <- 16
   } else {
@@ -279,6 +267,9 @@ PCA_plot_3d <- function(data,
   pcaData <- as.data.frame(pca.object$x[, 1:npc])
 
   groups <- detect_groups(sample_names = colnames(data), sample_info = sample_info)
+  
+  levels <- length(unique(groups))
+  
   # Missing design clause
   if (is.null(sample_info)) {
     pcaData <- cbind(pcaData, detect_groups(colnames(data), sample_info))
@@ -286,10 +277,12 @@ PCA_plot_3d <- function(data,
     pcaData <- cbind(pcaData, detect_groups(colnames(data), sample_info), sample_info)
   }
   colnames(pcaData)[npc + 1] <- "Names"
+  
+  nshapes <- (length(unique(groups)) / 8) + 1
 
   # plot color scheme
-  color_palette <- generate_colors(n = nlevels(as.factor(pcaData$Names)), palette_name = plots_color_select)
-
+  color_palette <- generate_colors(n = levels, palette_name = plots_color_select)
+  
   # selected principal components
   PCAxyz <- c(as.integer(PCAx), as.integer(PCAy), as.integer(PCAz))
   percentVar <- get_pc_variance(data)[PCAxyz]
@@ -298,19 +291,20 @@ PCA_plot_3d <- function(data,
     y = pcaData[, as.integer(PCAy)],
     z = pcaData[, as.integer(PCAz)],
     color = pcaData[, selected_color],
-    symbol = pcaData[, selected_shape],
-    text = rownames(pcaData)[1],
-    hovertemplate = paste(
-      "<b>%{text}</b><br><br>",
+    colors = color_palette[sort(as.factor(pcaData[, selected_color]))],
+    symbol = pcaData[,selected_shape],
+    symbols = rep(c("square", "circle", "diamond", "square-open", "circle-open",
+                    "cross", "x", "diamond-open"), nshapes),
+    text = rownames(pcaData),
+    hovertemplate = ~paste(
+      "<b>",rownames(pcaData),"</b><br><br>",
       "PC ", PCAy, ":%{y:.3f}<br>",
       "PC ", PCAx, ":%{x:.3f}<br>",
       "PC ", PCAz, ":%{z:.3f}<br>",
       "<extra></extra>"
     ),
     type = "scatter3d",
-    mode = "markers",
-    width = ,
-    marker = list(color = color_palette[as.factor(pcaData$Names)])
+    mode = "markers"
     )
   plot_PCA <- plotly::layout(
     p = plot_PCA,
@@ -371,12 +365,6 @@ t_SNE_plot <- function(data,
   counts <- data
   memo <- ""
 
-  if (ncol(counts) > 100) {
-    part <- 1:100
-    counts <- counts[, part]
-    memo <- paste("(only showing 100 samples)")
-  }
-
   if (ncol(counts) < 31) {
     x_axis_labels <- 16
   } else {
@@ -388,7 +376,8 @@ t_SNE_plot <- function(data,
   y <- sample_info
   tsne <- Rtsne::Rtsne(t(x), dims = 2, perplexity = 1, verbose = FALSE, max_iter = 400)
   pcaData <- as.data.frame(tsne$Y)
-
+  rownames(pcaData) <- rownames(t(x))
+  
   # Missing design clause
   if (is.null(sample_info)) {
     pcaData <- cbind(pcaData, detect_groups(colnames(x), y))
@@ -397,7 +386,15 @@ t_SNE_plot <- function(data,
   }
 
   colnames(pcaData)[1:3] <- c("x1", "x2", "Names")
+  
+  pcaData$tooltip_text <- paste0(
+    "Name: ", rownames(pcaData),
+    "<br>Dimension 1: ", round(pcaData$x1, 2),
+    "<br>Dimension 2: ", round(pcaData$x2, 2)
+  )
 
+  nshapes <- (length(unique(as.factor(pcaData$Names))) / 8) + 1
+  
   # Set point size based on number of sample
   point_size <- 6
   if (ncol(x) >= 40) {
@@ -414,12 +411,13 @@ t_SNE_plot <- function(data,
       x = "x1",
       y = "x2",
       color = selected_color,
-      shape = selected_shape
+      shape = selected_shape,
+      text = "tooltip_text"
     )
   ) +
     ggplot2::geom_point(size = point_size) +
     # Preferred shapes
-    ggplot2::scale_shape_manual(values = c(15, 16, 17, 18, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 0, 1, 2, 5, 6, 19, 20, 30:100)) +
+    ggplot2::scale_shape_manual(values = rep(c(15, 16, 18, 0, 1, 3:5), nshapes)) +
     ggplot2::theme_light() +
     ggplot2::theme(
       legend.position = "right",
@@ -492,12 +490,6 @@ MDS_plot <- function(data,
   counts <- data
   memo <- ""
 
-  if (ncol(counts) > 100) {
-    part <- 1:100
-    counts <- counts[, part]
-    memo <- paste("(only showing 100 samples)")
-  }
-
   if (ncol(counts) < 31) {
     x_axis_labels <- 16
   } else {
@@ -522,6 +514,14 @@ MDS_plot <- function(data,
     pcaData <- cbind(pcaData, detect_groups(colnames(x), y), sample_info)
   }
   colnames(pcaData)[1:3] <- c("x1", "x2", "Names")
+  
+  pcaData$tooltip_text <- paste0(
+    "Name: ", rownames(pcaData),
+    "<br>Dimension 1: ", round(pcaData$x1, 2),
+    "<br>Dimension 2: ", round(pcaData$x2, 2)
+  )
+  
+  nshapes <- (length(unique(as.factor(pcaData$Names))) / 8) + 1
 
   # Set point & text size based on number of sample
   point_size <- 6
@@ -540,12 +540,13 @@ MDS_plot <- function(data,
       x = "x1",
       y = "x2",
       color = selected_color,
-      shape = selected_shape
+      shape = selected_shape,
+      text = "tooltip_text"
     )
   )
   p <- p + ggplot2::geom_point(size = point_size) +
     # Preferred shapes
-    ggplot2::scale_shape_manual(values = c(15, 16, 17, 18, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 0, 1, 2, 5, 6, 19, 20, 30:100)) +
+    ggplot2::scale_shape_manual(values = rep(c(15, 16, 18, 0, 1, 3:5), nshapes)) +
     ggplot2::theme_light() +
     ggplot2::theme(
       legend.position = "right",
@@ -810,7 +811,7 @@ PCAtools_eigencorplot <- function(processed_data,
     # colnames(meta_data)[1] <- "Sample_Name"
   } else {
     meta_data <- sample_info
-
+    
     # Design Factors must be converted to numeric
     meta_data <- as.data.frame(meta_data)
     meta_data <- sapply(meta_data, function(x) as.numeric(factor(x)))
@@ -828,6 +829,74 @@ PCAtools_eigencorplot <- function(processed_data,
   }
 }
 
+#'  Principal Component Analysis with PCAtools package
+#'  
+#'  Convert PCA loadings to percent contribution values by squaring and plot
+#'  them
+#'
+#' @param processed_data Matrix of gene data that has been through
+#'  \code{\link{pre_process}())}
+#' @param all_gene_names vector of gene names from 
+#' \code{\link{pre_process}())}
+#' @param PC # Selected principal component
+#'
+#' @return A \code{ggplot} object as a formatted plot generated with PCAtools
+#'  package
+#'  
+#' @export
+#' 
+#' @family PCA Functions
+#'
+var_imp_plots <- function(data,
+                          all_gene_names,
+                          PC){
+  
+  # Swap rownames with gene symbols
+  data <- rowname_id_swap(
+    data_matrix = data,
+    all_gene_names = all_gene_names,
+    select_gene_id = "symbol"
+  )
+  
+  #create pca object
+  pca_obj <- PCAtools::pca(mat = data)
+  
+  #Convert loadings to importance values
+  loadings <- as.data.frame(PCAtools::getLoadings(pca_obj))
+  imp_vals <- data.frame(vals = ((loadings[[paste0(PC)]])^2) * 100, 
+                         gene = rownames(loadings))
+  
+  #Sort and trim importance values greatest to least
+  imp_vals <- imp_vals[order(imp_vals$vals, decreasing = TRUE), ]
+  imp_vals <- imp_vals[c(1:10),]
+  
+  imp_plot <- ggplot2::ggplot(data = imp_vals)+
+    ggplot2::aes(
+      x = reorder(gene, -vals), 
+      y = vals, 
+      label = paste(round(vals, 2), "%")
+    )+
+    ggplot2::geom_bar(stat = "identity", color = "black", fill = "dodgerblue")+
+    ggplot2::geom_text(vjust = 2, size = 5)+
+    ggplot2::theme_minimal()+
+    ggplot2::labs(
+      x = "Genes", 
+      y = "Contribution (%)", 
+      title = paste0("Contribution of Genes to ", PC, " (Top 10)")
+    )+
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45,
+                                                       size = 12,
+                                                       vjust = 0.5),
+                   axis.text.y = ggplot2::element_text(size = 12),
+                   plot.title = ggplot2::element_text(size = 20),
+                   axis.title.x = ggplot2::element_text(size = 12,
+                                                        vjust = 0.8),
+                   axis.title.y = ggplot2::element_text(size = 12)
+    )
+  
+  return(imp_plot)
+  
+}
 
 
 #' Gets plot width dimensions from session$clientdata

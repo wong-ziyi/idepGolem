@@ -56,8 +56,25 @@ mod_09_network_ui <- function(id) {
           "<hr style='height:1px;border:none;color:#333;background-color:#333;' />"
         ),
         htmlOutput(outputId = ns("list_wgcna_modules")),
-        downloadButton(outputId = ns("download_all_WGCNA_module"),"All modules"),
-        downloadButton(outputId = ns("download_selected_WGCNA_module"),"Selected module"),
+        div(
+          style = "display: flex; gap: 10px;",
+          downloadButton(
+            outputId = ns("download_all_WGCNA_module"),
+            "All modules"
+          ),
+          downloadButton(
+            outputId = ns("download_selected_WGCNA_module"),
+            "Selected module"
+          ),
+          conditionalPanel(
+            condition = "input.network_tabs == 'Heatmap'",
+            downloadButton(
+              outputId = ns("download_heat_data"),
+              "Heatmap Data"
+            ),
+            ns = ns
+          )
+        ),
         textOutput(ns("module_statistic")),
         a(
           h5("Questions?", align = "right"),
@@ -179,6 +196,9 @@ mod_09_network_server <- function(id, pre_process, idep_data, tab) {
     })
 
     wgcna <- reactive({
+      req(!is.na(input$n_genes_network))
+      req(!is.na(input$min_module_size))
+      req(!is.na(input$soft_power))
       req(!is.null(pre_process$data()))
       withProgress(message = "Runing WGCNA ...", {
         incProgress(0.2)
@@ -232,7 +252,14 @@ mod_09_network_server <- function(id, pre_process, idep_data, tab) {
 
     adj_matrix <- reactive({
       req(!is.null(input$select_wgcna_module))
+      req(!is.na(input$network_layout))
+      req(!is.na(input$edge_threshold))
+      req(!is.na(input$top_genes_network))
+      req(!is.na(input$n_genes_network))
+      req(!is.na(input$min_module_size))
+      req(!is.na(input$soft_power))
       req(!is.null(wgcna()))
+      
       tem <- input$network_layout
       tem <- input$edge_threshold
       get_network(
@@ -247,7 +274,14 @@ mod_09_network_server <- function(id, pre_process, idep_data, tab) {
 
     observe({
       req(!is.null(input$select_wgcna_module))
+      req(!is.na(input$network_layout))
+      req(!is.na(input$edge_threshold))
+      req(!is.na(input$top_genes_network))
+      req(!is.na(input$n_genes_network))
+      req(!is.na(input$min_module_size))
+      req(!is.na(input$soft_power))
       req(!is.null(wgcna()))
+
       tem = input$network_layout
       network$network_plot <- get_network_plot(
         adj_matrix(),
@@ -411,6 +445,41 @@ mod_09_network_server <- function(id, pre_process, idep_data, tab) {
       select_gene_id = reactive({
         pre_process$select_gene_id()
       })
+    )
+    
+    output$download_heat_data <- downloadHandler(
+      filename = function() {
+        req(!is.null(input$select_wgcna_module))
+        # trim module name to the color
+        paste0(
+          gsub(
+            "\\d|\\s|genes|\\.|\\(|\\)", 
+            "", 
+            input$select_wgcna_module, 
+            perl = TRUE
+          ),
+          "_Heatmap_Data.csv"
+        )
+      },
+      content = function(file) {
+        req(!is.null(network_data()))
+        
+        df <- network_data()
+        # Center data to match heatmap
+        df <- df - rowMeans(df, na.rm = TRUE)
+        # Convert row names to gene symbols
+        df <- data.frame(
+          Gene_ID = rownames(df),
+          rowname_id_swap(
+            data_matrix = df,
+            all_gene_names = pre_process$all_gene_names(),
+            select_gene_id = pre_process$select_gene_id()
+          )
+        )
+        rownames(df) <- gsub(" ", "", rownames(df)) 
+        
+        write.csv(df, file)
+      }
     )
   })
 }
